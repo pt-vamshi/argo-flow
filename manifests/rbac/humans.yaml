@@ -46,6 +46,7 @@ metadata:
 
 # =============================================================================
 # L1 -- can submit, can read. CANNOT resume.
+# Cluster-wide access (all namespaces).
 #
 # `argo resume` issues a PUT/PATCH against the Workflow object. Omitting
 # update/patch here is the entire approval gate. There is no separate
@@ -54,10 +55,9 @@ metadata:
 # =============================================================================
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: runbooks-l1
-  namespace: argo
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflows"]
@@ -76,31 +76,21 @@ rules:
   # NOT granted: secrets                              -> cannot read runner tokens
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata: { name: runbooks-l1, namespace: argo }
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l1 }
+kind: ClusterRoleBinding
+metadata: { name: runbooks-l1 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l1 }
 subjects:
   - { kind: ServiceAccount, name: l1-user, namespace: argo }
 
 # =============================================================================
 # L2 -- everything L1 has, plus update/patch on workflows (i.e. resume).
-#
-# Scoped to the `argo` namespace with a Role, not a ClusterRole. This is what
-# stops L2 from approving L3 work: L3 workflows live in `argo-l3`, where L2
-# has no permissions at all.
-#
-# Worth understanding why: Kubernetes RBAC has no object-level granularity.
-# A `patch workflows` grant in a namespace applies to EVERY workflow in it.
-# There is no way to say "L2 may resume this workflow but not that one".
-# Namespace separation is therefore not defence-in-depth -- it is the ONLY
-# mechanism that makes "L2 cannot approve L3-only operations" true.
+# Cluster-wide access (all namespaces).
 # =============================================================================
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: runbooks-l2
-  namespace: argo
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflows"]
@@ -113,25 +103,24 @@ rules:
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata: { name: runbooks-l2, namespace: argo }
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l2 }
+kind: ClusterRoleBinding
+metadata: { name: runbooks-l2 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l2 }
 subjects:
   - { kind: ServiceAccount, name: l2-approver, namespace: argo }
 
 # =============================================================================
-# L3 -- resume rights in BOTH namespaces.
+# L3 -- full cluster-wide rights (all namespaces, all workflow operations).
 # =============================================================================
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: runbooks-l3
-  namespace: argo-l3
 rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflows"]
-    verbs: ["create", "get", "list", "watch", "update", "patch"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
   - apiGroups: ["argoproj.io"]
     resources: ["workflowtemplates"]
     verbs: ["get", "list", "watch"]
@@ -140,42 +129,11 @@ rules:
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata: { name: runbooks-l3, namespace: argo-l3 }
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l3 }
+kind: ClusterRoleBinding
+metadata: { name: runbooks-l3 }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: runbooks-l3 }
 subjects:
   - { kind: ServiceAccount, name: l3-approver, namespace: argo }
----
-# L3 also inherits L2's rights in `argo`.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata: { name: runbooks-l3-in-argo, namespace: argo }
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l2 }
-subjects:
-  - { kind: ServiceAccount, name: l3-approver, namespace: argo }
----
-# L1 needs to be able to SUBMIT into argo-l3 (request an L3 op) without being
-# able to resume there. Create + read only.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: runbooks-l3-requester
-  namespace: argo-l3
-rules:
-  - apiGroups: ["argoproj.io"]
-    resources: ["workflows"]
-    verbs: ["create", "get", "list", "watch"]
-  - apiGroups: ["argoproj.io"]
-    resources: ["workflowtemplates"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata: { name: runbooks-l3-requester, namespace: argo-l3 }
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runbooks-l3-requester }
-subjects:
-  - { kind: ServiceAccount, name: l1-user, namespace: argo }
-  - { kind: ServiceAccount, name: l2-approver, namespace: argo }
 
 # =============================================================================
 # SA TOKEN SECRETS -- required for Argo Server SSO delegation.

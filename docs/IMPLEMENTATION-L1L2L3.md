@@ -139,9 +139,9 @@ Three-tier approval model for runbook operations:
 
 ### Key Design
 
-#### Roles are Cluster-Wide (ClusterRole + ClusterRoleBinding)
+#### ClusterRoles, Scoped Bindings
 
-RBAC is now enforced with ClusterRoles, granting permissions across all namespaces. Kubernetes has no object-level RBAC, so you either trust a tier across the board or don't.
+Permissions are defined as ClusterRoles, but only L1 and L3 are bound cluster-wide (ClusterRoleBinding). L2 is bound with a namespace-scoped RoleBinding restricted to `argo`, so it cannot reach the separate `argo-l3` namespace where L3-tier workflows run — Kubernetes has no object-level RBAC, so per-namespace RoleBindings are what keep L2 from resuming L3 workflows.
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
